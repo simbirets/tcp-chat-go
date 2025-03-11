@@ -18,6 +18,7 @@ type Server struct {
 	Rooms map[RoomID]*Room
 }
 
+// this func contains Addr and Rooms
 func NewServer(addr string) *Server {
 	return &Server{
 		Addr:  addr,
@@ -64,12 +65,12 @@ func (r *Room) AddUser(user User) bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
+	// adding a user if he not exist in the room
 	for _, roomUser := range r.users {
 		if roomUser.Addr.String() == user.Addr.String() {
 			return false
 		}
 	}
-
 	r.users = append(r.users, user)
 	return true
 }
@@ -90,6 +91,7 @@ func (r *Room) DistributeMsg(fromUser string, msg string) *ErrorChan {
 		ErrMap: make(map[string]error),
 	}
 
+	// if the user is not the sender, then he receives the messages
 	var wg sync.WaitGroup
 	for _, usr := range r.GetUsers() {
 		if usr.Addr.String() != fromUser {
@@ -157,6 +159,7 @@ func handleConnection(conn net.Conn, server *Server) {
 		scanner.Scan()
 		choice := scanner.Text()
 
+		// choosing between rooms
 		switch choice {
 		case "1":
 			selectedRoom = server.Rooms[1]
