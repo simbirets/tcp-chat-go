@@ -8,10 +8,14 @@ import (
 	"sync"
 )
 
+const (
+	password3 = "1234"
+)
+
 type Server struct {
 	Addr  string
 	Ln    net.Listener
-	Rooms map[RoomID]*Room // Хранение всех комнат
+	Rooms map[RoomID]*Room
 }
 
 func NewServer(addr string) *Server {
@@ -94,9 +98,11 @@ func (r *Room) DistributeMsg(fromUser string, msg string) *ErrorChan {
 				defer wg.Done()
 				conn := *user.GetConnection()
 
+				// output messages
 				_, err := conn.Write([]byte(
 					">" + usr.UserName + ": " + msg + "\n",
 				))
+
 				if err != nil {
 					errChan.AddNewRoutineError(conn.RemoteAddr().String(), err)
 				}
@@ -111,24 +117,24 @@ func main() {
 	server := NewServer(":2000")
 	err := server.Listen()
 
-	// Создание комнат
+	// create rooms
 	rooms := []Room{
-		{RoomID: 1, RoomName: "Комната 1"},
-		{RoomID: 2, RoomName: "Комната 2"},
-		{RoomID: 3, RoomName: "Комната 3"},
+		{RoomID: 1, RoomName: "Common-open room"},
+		{RoomID: 2, RoomName: "Common-lock room"},
+		{RoomID: 3, RoomName: "Private room"},
 	}
 	for _, room := range rooms {
 		server.Rooms[room.RoomID] = &room
 	}
 
 	if err != nil {
-		log.Fatalf("Не удалось прослушивать порт: %s\n", err.Error())
+		log.Fatalf("Could not listening the port: %s\n", err.Error())
 	}
 
 	for {
 		conn, err := server.Ln.Accept()
 		if err != nil {
-			log.Printf("Не удалось подключиться к серверу: %s\n", err.Error())
+			log.Printf("Could not connect to the server: %s\n", err.Error())
 			continue
 		}
 
@@ -142,37 +148,42 @@ func handleConnection(conn net.Conn, server *Server) {
 	fmt.Fprintln(conn, "Your name:")
 	scanner := bufio.NewScanner(conn)
 	scanner.Scan()
-	name := scanner.Text() // Get user's name
+	name := scanner.Text()
 
-	var selectedRoom *Room = nil // Initialize selectedRoom to nil
+	var selectedRoom *Room = nil
 	for {
-		// Choice of room
-		fmt.Fprintln(conn, "Выберите комнату (1, 2 или 3):")
-		scanner2 := bufio.NewScanner(conn)
-		scanner2.Scan()
-		choice := scanner2.Text()
+		fmt.Fprintln(conn, "Choose the room (Common-open room [1]; Common-lock room [2]; Private room):")
+		scanner := bufio.NewScanner(conn)
+		scanner.Scan()
+		choice := scanner.Text()
 
 		switch choice {
 		case "1":
 			selectedRoom = server.Rooms[1]
 		case "2":
 			selectedRoom = server.Rooms[2]
+			fmt.Fprintln(conn, "Enter the password for log in the common-lock room:")
+			scanner3 := bufio.NewScanner(conn)
+			scanner3.Scan()
+			if scanner3.Text() != password3 {
+				fmt.Fprintln(conn, "Wrong password. You can not be able to enter the room.")
+				continue
+			}
+			fmt.Fprintf(conn, "The password is correct. You can enter \n")
 		case "3":
 			selectedRoom = server.Rooms[3]
 		default:
-			fmt.Fprintln(conn, "Неверный выбор. Пожалуйста, выберите 1, 2 или 3.")
-			continue // Prompt for room selection again
+			fmt.Fprintln(conn, "Wrong choose. You must choose between rooms 1, 2, or 3.")
+			continue
 		}
 
-		// Exit the loop when a valid room is selected
 		if selectedRoom != nil {
 			break
 		}
 	}
 
-	addr := conn.RemoteAddr() // Retaining the addr for adding user
+	addr := conn.RemoteAddr()
 
-	// Add user only when we have a valid selectedRoom
 	user := User{
 		Addr:     addr,
 		conn:     &conn,
@@ -184,16 +195,20 @@ func handleConnection(conn net.Conn, server *Server) {
 	selectedRoom.AddUser(user)
 
 	for {
+
+		// reading messages
 		buf := make([]byte, 1024)
 		n, err := conn.Read(buf)
 		if err != nil {
-			log.Printf("Ошибка чтения сообщения от пользователя: %s\n", err.Error())
+			log.Printf("Could not read message from user: %s\n", err.Error())
 			return
 		}
-		msg := fmt.Sprintf("%s", string(buf[:n])) // Changed to only send the raw message
+
+		// recieving messages
+		msg := fmt.Sprintf("%s", (buf[:n]))
 		errChan := selectedRoom.DistributeMsg(addr.String(), msg)
 		if len(errChan.ErrMap) != 0 {
-			log.Println("Некоторые пользователи не получили сообщение")
+			log.Println("Some users did not recieve the message")
 		}
 	}
 }
